@@ -2,44 +2,30 @@ import torch
 import numpy as np
 
 
-def CostVolume(input_feature, candidate_feature, position="left", method="subtract", k=4, batch_size=4, channel=32, D=192, H=256, W=512):
-    """
-    Some parameters:
-        position
-            means whether the input feature img is left or right
-        k
-            the conv counts of the first stage, the feature extraction stage
-    """
-    origin = input_feature  # img shape : [batch_size, channel, H // 2**k, W // 2**k]
+def CostVolume(input_feature, candidate_feature, position="left", method="subtract", k=4, channel=32, D=256, batch_size=4):
+
+    if position != "left" and position != "right":
+        raise Exception('invalid cost volume direction')
+    origin = input_feature
     candidate = candidate_feature
-    """ if the input image is the left image, and needs to compare with the right candidate.
-        Then it should move to left and pad in right"""
+    oMinusM_List = []
     if position == "left":
-        leftMinusRightMove_List = []
         for disparity in range(D // 2**k):
             if disparity == 0:
                 if method == "subtract":
-                    """ subtract method"""
-                    leftMinusRightMove = origin - candidate
+                    oMinusM = origin - candidate
                 else:
-                    """ concat mathod """
-                    leftMinusRightMove = torch.cat((origin, candidate), 1)
-                leftMinusRightMove_List.append(leftMinusRightMove)
+                    oMinusM = torch.cat((origin, candidate), 1)
             else:
                 zero_padding = np.zeros((origin.shape[0], channel, origin.shape[2], disparity))
                 zero_padding = torch.from_numpy(zero_padding).float()
                 zero_padding = zero_padding.cuda()
-
-                left_move = torch.cat((origin, zero_padding), 3)
-
+                move = torch.cat((origin, zero_padding), 3)
+                move = move[:, :, :, -origin.shape[3]:]
                 if method == "subtract":
-                    """ subtract method"""
-                    leftMinusRightMove = left_move[:, :, :, :origin.shape[3]] - candidate
+                    oMinusM = move - candidate
                 else:
-                    """ concat mathod """
-                    leftMinusRightMove = torch.cat((left_move[:, :, :, :origin.shape[3]], candidate), 1)  # concat the channels
-
-                leftMinusRightMove_List.append(leftMinusRightMove)
-        cost_volume = torch.stack(leftMinusRightMove_List, dim=1)  # [batch_size, count(disparitys), channel, H, W]
-
+                    oMinusM = torch.cat((move, candidate), 1)
+            oMinusM_List.append(oMinusM)
+        cost_volume = torch.stack(oMinusM_List, dim=1)
         return cost_volume
