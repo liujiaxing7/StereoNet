@@ -71,7 +71,7 @@ TestImgLoader = torch.utils.data.DataLoader(
 
 cost_volume_method = "subtract"
 # cost_volume_method = "concat"
-model = stereonet(batch_size=batchSize, cost_volume_method=cost_volume_method, conv3d_type='2d')
+model = stereonet(batch_size=batchSize, cost_volume_method=cost_volume_method)
 print("-- model using stereonet --")
 
 if args.cuda:
