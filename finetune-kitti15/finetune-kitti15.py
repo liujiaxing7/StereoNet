@@ -1,4 +1,9 @@
 from __future__ import print_function
+import sys, os
+
+CURRENT_DIR = os.path.dirname(__file__)
+sys.path.append(os.path.join(CURRENT_DIR, '../'))
+
 import argparse
 import os
 import torch
@@ -11,11 +16,13 @@ import torch.nn.functional as F
 import numpy as np
 import time
 from torch.optim import RMSprop
+from file import MkdirSimple
 
 from dataloader import KITTIloader2015 as ls
 from dataloader import KITTILoader as DA
 
 from models import *
+
 
 root_path = "/home/oliver/PycharmProjects/StereoNet"
 
@@ -28,6 +35,8 @@ parser.add_argument('--datapath', default='/datasets/data_scene_flow/training/',
                     help='datapath')
 parser.add_argument('--epochs', type=int, default=2000,
                     help='number of epochs to train')
+parser.add_argument('--save_step', type=int, default=50,
+                    help='number of epochs to save model')
 
 parser.add_argument('--loadmodel', default=root_path+'/checkpoints/checkpoint_sceneflow.tar', help='load model')
 # parser.add_argument('--loadmodel', default=None, help='load model')
@@ -62,7 +71,7 @@ TestImgLoader = torch.utils.data.DataLoader(
 
 cost_volume_method = "subtract"
 # cost_volume_method = "concat"
-model = stereonet(batch_size=batchSize, cost_volume_method=cost_volume_method)
+model = stereonet(batch_size=batchSize, cost_volume_method=cost_volume_method, conv3d_type='2d')
 print("-- model using stereonet --")
 
 if args.cuda:
@@ -74,9 +83,10 @@ optimizer = optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999))
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
 pretrained_model_path = root_path + "/checkpoints/checkpoint_sceneflow.tar"
-if args.loadmodel is not None and os.path.exists(pretrained_model_path):
+pretrained_model_path = args.loadmodel if args.loadmodel is not None else pretrained_model_path
+if os.path.exists(pretrained_model_path):
     state_dict = torch.load(pretrained_model_path)
-    model.load_state_dict(state_dict['state_dict'])
+    model.load_state_dict(state_dict['state_dict'], strict=False)
     total_train_loss_save = state_dict['total_train_loss']
     print("-- pretrained model loaded --")
 
@@ -138,32 +148,43 @@ def adjust_learning_rate(optimizer, epoch):
         lr = 0.001
     else:
         lr = 0.0001
-    print("lr = %f" % lr)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
+    return lr
+
+def save_model(epoch, total_train_loss, max_acc, max_epo, file):
+    MkdirSimple(file)
+    torch.save({
+        'state_dict': model.state_dict(),
+        'total_train_loss': total_train_loss,
+        'epoch': epoch + 1,
+        'optimizer_state_dict': optimizer.state_dict(),
+        'max_acc': max_acc,
+        'max_epoch': max_epo
+    }, file)
 
 
 def main():
     epoch_start = 0
     max_acc = 0
     max_epo = 0
-    checkpoint_path = root_path + "/checkpoints/checkpoint_finetune_kitti15.tar"
-    if args.loadmodel is not None and os.path.exists(checkpoint_path):
-        state_dict = torch.load(checkpoint_path)
-        model.load_state_dict(state_dict['state_dict'])
-        optimizer.load_state_dict(state_dict['optimizer_state_dict'])
-        epoch_start = state_dict['epoch']
-        max_acc = state_dict['max_acc']
-        max_epo = state_dict['max_epoch']
-        print("-- checkpoint loaded --")
+    # checkpoint_path = root_path + "/checkpoints/checkpoint_finetune_kitti15.tar"
+    # if args.loadmodel is not None and os.path.exists(checkpoint_path):
+    #     state_dict = torch.load(checkpoint_path)
+    #     model.load_state_dict(state_dict['state_dict'])
+    #     optimizer.load_state_dict(state_dict['optimizer_state_dict'])
+    #     epoch_start = state_dict['epoch']
+    #     max_acc = state_dict['max_acc']
+    #     max_epo = state_dict['max_epoch']
+    #     print("-- checkpoint loaded --")
 
     start_full_time = time.time()
 
     for epoch in range(epoch_start, args.epochs+1):
-        print('This is %d-th epoch' % epoch)
         # scheduler.step()
         # print("learning rate : %f " % scheduler.get_lr()[0])
-        adjust_learning_rate(optimizer, epoch)
+        lr = adjust_learning_rate(optimizer, epoch)
 
         total_train_loss = 0
         total_test_three_pixel_error_rate = 0
@@ -173,30 +194,31 @@ def main():
             loss = train(imgL_crop,imgR_crop, disp_crop_L)
             total_train_loss += loss
 
-        print('epoch %d average training loss = %.3f' % (epoch, total_train_loss/len(TrainImgLoader)))
+        message = 'epoch %d: ' % epoch
+        message += " lr = %f" % lr
+
+        message += ', average training loss = %.3f' % (total_train_loss/len(TrainImgLoader))
 
         ## Test ##
         for batch_idx, (imgL, imgR, disp_L) in enumerate(TestImgLoader):
             test_three_pixel_error_rate = test(imgL,imgR, disp_L)
             total_test_three_pixel_error_rate += test_three_pixel_error_rate
 
-        print('epoch %d total 3-px error in val = %.3f' %(epoch, total_test_three_pixel_error_rate/len(TestImgLoader)*100))
+        message += ', total 3-px error in val = %.3f' %(total_test_three_pixel_error_rate/len(TestImgLoader)*100)
 
         acc = (1-total_test_three_pixel_error_rate/len(TestImgLoader))*100
+        if epoch % args.save_step == 0:
+            savefilename = os.path.join(args.savemodel, 'checkpoints', 'checkpoint_{}.tar'.format(epoch))
+            save_model(epoch, total_train_loss, max_acc, max_epo, savefilename)
+
+        file_latest = os.path.join(args.savemodel, 'checkpoints', 'latest.tar')
+        save_model(epoch, total_train_loss, max_acc, max_epo, file_latest)
         if acc > max_acc:
             max_acc = acc
             max_epo = epoch
-            savefilename = root_path + '/checkpoints/checkpoint_finetune_kitti15.tar'
-            torch.save({
-                'state_dict': model.state_dict(),
-                'total_train_loss': total_train_loss,
-                'epoch': epoch + 1,
-                'optimizer_state_dict': optimizer.state_dict(),
-                'max_acc': max_acc,
-                'max_epoch': max_epo
-            }, savefilename)
-            print("-- max acc checkpoint saved --")
-        print('MAX epoch %d test 3 pixel correct rate = %.3f' %(max_epo, max_acc))
+
+        message += ' ,MAX epoch %d test 3 pixel correct rate = %.3f' %(max_epo, max_acc)
+        print(message)
 
     print('full finetune time = %.2f HR' %((time.time() - start_full_time)/3600))
     print(max_epo)
