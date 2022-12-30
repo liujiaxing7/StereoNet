@@ -329,8 +329,8 @@ class StereoNet(nn.Module):
         return output
 
     def forward_stage1(self, input_l, input_r):
-        output_l = self.forward_once_1(input_l)
-        output_r = self.forward_once_1(input_r)
+        output_l = self.feature_extraction(input_l)
+        output_r = self.feature_extraction(input_r)
 
         return output_l, output_r
 
