@@ -398,9 +398,9 @@ class StereoNet(nn.Module):
         affinity_settings['win_h'] = 3
         affinity_settings['dilation'] = [1, 2, 4, 8]
 
-        self.feature_extraction = feature_extraction(3, 'separate', affinity_settings)
+        self.feature_extraction = feature_extraction(0, 'separate', affinity_settings)
 
-        self.fnet = BasicEncoder(output_dim=32, norm_fn='instance', dropout=0)
+        # self.fnet = BasicEncoder(output_dim=32, norm_fn='instance', dropout=0)
 
         self.downsampling = nn.Sequential(
             nn.Conv2d(3, 32, 5, stride=2, padding=2),
@@ -483,7 +483,7 @@ class StereoNet(nn.Module):
         return d_refined
 
     def forward(self, left, right):
-        left_feature, right_feature = self.fnet([left, right])
+        left_feature, right_feature = self.forward_stage1(left, right)
         disparity_low_l = self.forward_stage2(left_feature, right_feature)
 
         d_initial_l = nn.functional.interpolate(disparity_low_l, [left.shape[2], left.shape[3]], mode='bilinear',
