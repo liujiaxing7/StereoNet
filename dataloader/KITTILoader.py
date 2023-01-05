@@ -74,7 +74,7 @@ class myImageFloder(data.Dataset):
            right_img  = processed(right_img)
 
 
-
+           dataL = np.expand_dims(dataL ,0)
            return left_img, right_img, dataL
         else:
            w, h = left_img.size

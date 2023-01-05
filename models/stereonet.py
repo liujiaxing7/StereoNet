@@ -2,7 +2,11 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 from utils.cost_volume import CostVolume
+from collections import OrderedDict
+from andrew_refinement import Refinement
 
+
+#Lac-GwcNet feature extract
 def convbn(in_planes, out_planes, kernel_size, stride, pad, dilation):
 
     return nn.Sequential(nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=dilation if dilation > 1 else pad, dilation = dilation, bias=False),
@@ -262,6 +266,8 @@ class feature_extraction(nn.Module):
 
             return output_feature
 
+
+#Crestereo feature extract
 class ResidualBlock(nn.Module):
     def __init__(self, in_planes, planes, norm_fn='group', stride=1):
         super(ResidualBlock, self).__init__()
@@ -379,6 +385,8 @@ class BasicEncoder(nn.Module):
 
         return x
 
+
+#StereoNet
 class StereoNet(nn.Module):
     def __init__(self, batch_size, cost_volume_method):
         super(StereoNet, self).__init__()
@@ -440,6 +448,10 @@ class StereoNet(nn.Module):
             # nn.ReLU(),
         )
 
+        self.k_refinement_layers = 3
+        self.refiners = nn.ModuleList()
+        for _ in range(self.k_refinement_layers):
+            self.refiners.append(Refinement())
     def forward_once_1(self, x):
         output = self.downsampling(x)
 
@@ -486,16 +498,19 @@ class StereoNet(nn.Module):
         left_feature, right_feature = self.forward_stage1(left, right)
         disparity_low_l = self.forward_stage2(left_feature, right_feature)
 
-        d_initial_l = nn.functional.interpolate(disparity_low_l, [left.shape[2], left.shape[3]], mode='bilinear',
-                                                align_corners=True)
-        d_initial_l = soft_argmin(d_initial_l)
-        d_refined_l = self.forward_stage3(disparity_low_l, left)
-        d_final_l = d_initial_l + d_refined_l
-        # d_final_l = soft_argmin(d_initial_l + d_refined_l)
+        disparity_pyramid = [soft_argmin(disparity_low_l)]
 
-        d_final_l = nn.ReLU()(d_final_l)
+        for idx, refiner in enumerate(self.refiners, start=1):
+            # print("idx:", idx)
+            # print("refiner", refiner)
+            scale = (2**self.k_refinement_layers) / (2**idx)
+            new_h, new_w = int(left.size()[2]//scale), int(left.size()[3]//scale)
+            reference_rescaled = F.interpolate(left, [new_h, new_w], mode='bilinear', align_corners=True)
+            disparity_low_rescaled = F.interpolate(disparity_pyramid[-1], [new_h, new_w], mode='bilinear', align_corners=True)
+            refined_disparity = F.relu(refiner(torch.cat((reference_rescaled, disparity_low_rescaled), dim=1)) + disparity_low_rescaled)
+            disparity_pyramid.append(refined_disparity)
 
-        return d_final_l
+        return disparity_pyramid
 
 class MetricBlock(nn.Module):
     def __init__(self, in_channel, out_channel, stride = 1):

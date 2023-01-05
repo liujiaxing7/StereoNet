@@ -102,16 +102,28 @@ def train(imgL,imgR,disp_L):
     if args.cuda:
         imgL, imgR, disp_true = imgL.cuda(), imgR.cuda(), disp_L.cuda()
 
-    #---------
-    mask = (disp_true > 0)
-    mask.detach_()
-    #----
 
     optimizer.zero_grad()
 
     output = model(imgL, imgR)
-    output = torch.squeeze(output, 1)
-    loss = F.smooth_l1_loss(output[mask], disp_true[mask], size_average=True)
+    for idx, disparity_left in enumerate(output):
+        output[idx] = F.interpolate(disparity_left, [imgL.size()[2], imgL.size()[3]],
+                                                       mode='bilinear', align_corners=True)
+    disp_pred_left = torch.stack(output, dim=0)
+
+    def _tiler(disp_gt_left):
+        matching_size = [disp_pred_left.size()[0], 1, 1, 1, 1]
+        return disp_gt_left.tile(matching_size)
+
+    disp_true_left = _tiler(disp_true)
+
+    #---------
+    mask = (disp_true_left > 0)
+    mask.detach_()
+    #----
+
+    # output = torch.squeeze(output, 1)
+    loss = F.smooth_l1_loss(disp_pred_left[mask], disp_true_left[mask], size_average=True)
 
     loss.backward()
     optimizer.step()
@@ -128,7 +140,7 @@ def test(imgL,imgR,disp_true):
 
     with torch.no_grad():
         output3 = model(imgL,imgR)
-        output = torch.squeeze(output3.data.cpu(), 1)
+        output = torch.squeeze(output3[-1].data.cpu(), 1)
 
     pred_disp = output
 
