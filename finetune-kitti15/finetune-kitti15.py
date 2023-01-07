@@ -143,15 +143,35 @@ def test(imgL,imgR,disp_true):
 
     return three_pixel_error_rate
 
+# def adjust_learning_rate(optimizer, epoch):
+#     if epoch <= 200:
+#         lr = 0.001
+#     else:
+#         lr = 0.0001
+#     for param_group in optimizer.param_groups:
+#         param_group['lr'] = lr
+#
+#     return lr
+
 def adjust_learning_rate(optimizer, epoch):
-    if epoch <= 200:
-        lr = 0.001
+    warm_up = 0.02
+    const_range = 0.6
+    min_lr_rate = 0.05
+
+    if epoch <= args.n_total_epoch * warm_up:
+        lr = (1 - min_lr_rate) * args.base_lr / (
+                args.n_total_epoch * warm_up
+        ) * epoch + min_lr_rate * args.base_lr
+    elif args.n_total_epoch * warm_up < epoch <= args.n_total_epoch * const_range:
+        lr = args.base_lr
     else:
-        lr = 0.0001
+        lr = (min_lr_rate - 1) * args.base_lr / (
+                (1 - const_range) * args.n_total_epoch
+        ) * epoch + (1 - min_lr_rate * const_range) / (1 - const_range) * args.base_lr
+
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-    return lr
 
 def save_model(epoch, total_train_loss, max_acc, max_epo, file):
     MkdirSimple(file)
