@@ -60,7 +60,7 @@ elif args.datatype == '2012':
 all_left_img, all_right_img, all_left_disp, test_left_img, test_right_img, test_left_disp = ls.dataloader(args.datapath)
 
 
-batchSize = 16
+batchSize = 8
 TrainImgLoader = torch.utils.data.DataLoader(
     DA.myImageFloder(all_left_img,all_right_img,all_left_disp, True),
     batch_size=batchSize, shuffle= True, num_workers= 12, drop_last=True)
@@ -154,23 +154,25 @@ def test(imgL,imgR,disp_true):
 #     return lr
 
 def adjust_learning_rate(optimizer, epoch):
+    base_lr =0.001
     warm_up = 0.02
     const_range = 0.6
     min_lr_rate = 0.05
 
-    if epoch <= args.n_total_epoch * warm_up:
-        lr = (1 - min_lr_rate) * args.base_lr / (
-                args.n_total_epoch * warm_up
-        ) * epoch + min_lr_rate * args.base_lr
-    elif args.n_total_epoch * warm_up < epoch <= args.n_total_epoch * const_range:
-        lr = args.base_lr
+    if epoch <= args.epochs * warm_up:
+        lr = (1 - min_lr_rate) * base_lr / (
+                args.epochs * warm_up
+        ) * epoch + min_lr_rate * base_lr
+    elif args.epochs * warm_up < epoch <= args.epochs * const_range:
+        lr = base_lr
     else:
-        lr = (min_lr_rate - 1) * args.base_lr / (
-                (1 - const_range) * args.n_total_epoch
-        ) * epoch + (1 - min_lr_rate * const_range) / (1 - const_range) * args.base_lr
+        lr = (min_lr_rate - 1) * base_lr / (
+                (1 - const_range) * args.epochs
+        ) * epoch + (1 - min_lr_rate * const_range) / (1 - const_range) * base_lr
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+    return lr
 
 
 def save_model(epoch, total_train_loss, max_acc, max_epo, file):
