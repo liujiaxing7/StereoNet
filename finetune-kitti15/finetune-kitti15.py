@@ -131,15 +131,16 @@ def train(imgL,imgR,disp_L,disp_R):
     #----
 
     # output = torch.squeeze(output, 1)
-    loss_left = F.smooth_l1_loss(disp_pred_left[mask_left], disp_true_left[mask_left], size_average=True)
-    loss_right = F.smooth_l1_loss(disp_pred_right[mask_right], disp_true_right[mask_right], size_average=True)
+    # loss_left = F.smooth_l1_loss(disp_pred_left[mask_left], disp_true_left[mask_left], size_average=True)
+    loss_left = torch.mean(robust_loss(disp_true_left[mask_left] - disp_pred_left[mask_left], alpha=1, c=2))
+    loss_right = torch.mean(robust_loss(disp_true_right[mask_right] - disp_pred_right[mask_right], alpha=1, c=2))
+    # loss_right = F.smooth_l1_loss(disp_pred_right[mask_right], disp_true_right[mask_right], size_average=True)
 
     loss = (loss_left + loss_right) / 2.0
     loss.backward()
     optimizer.step()
 
     return loss.data.item()
-
 
 def test(imgL,imgR,disp_true):
     model.eval()
@@ -186,6 +187,12 @@ def save_model(epoch, total_train_loss, max_acc, max_epo, file):
         'max_epoch': max_epo
     }, file)
 
+def robust_loss(x, alpha, c):   # pylint: disable=invalid-name
+    """
+    A General and Adaptive Robust Loss Function (https://arxiv.org/abs/1701.03077)
+    """
+    f = (abs(alpha - 2) / alpha) * (torch.pow(torch.pow(x / c, 2)/abs(alpha - 2) + 1, alpha/2) - 1)  # pylint: disable=invalid-name
+    return f
 
 def main():
     epoch_start = 0
