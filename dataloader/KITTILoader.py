@@ -28,11 +28,12 @@ def disparity_loader(path):
 
 
 class myImageFloder(data.Dataset):
-    def __init__(self, left, right, left_disparity, training, loader=default_loader, dploader= disparity_loader):
+    def __init__(self, left, right, left_disparity, right_disparity, training, loader=default_loader, dploader= disparity_loader):
  
         self.left = left
         self.right = right
         self.disp_L = left_disparity
+        self.disp_R = right_disparity
         self.loader = loader
         self.dploader = dploader
         self.training = training
@@ -41,10 +42,12 @@ class myImageFloder(data.Dataset):
         left  = self.left[index]
         right = self.right[index]
         disp_L= self.disp_L[index]
+        disp_R= self.disp_R[index]
 
         left_img = self.loader(left)
         right_img = self.loader(right)
         dataL = self.dploader(disp_L)
+        dataR = self.dploader(disp_R)
 
         # if index == 0:
         #     disp_crop_L = np.asarray(dataL)
@@ -69,13 +72,17 @@ class myImageFloder(data.Dataset):
            dataL = np.ascontiguousarray(dataL,dtype=np.float32)/256
            dataL = dataL[y1:y1 + th, x1:x1 + tw]
 
+           dataR = np.ascontiguousarray(dataR,dtype=np.float32)/256
+           dataR = dataR[y1:y1 + th, x1:x1 + tw]
+
            processed = preprocess.get_transform(augment=False)  
            left_img   = processed(left_img)
            right_img  = processed(right_img)
 
 
            dataL = np.expand_dims(dataL ,0)
-           return left_img, right_img, dataL
+           dataR = np.expand_dims(dataR ,0)
+           return left_img, right_img, dataL, dataR
         else:
            w, h = left_img.size
 
@@ -85,6 +92,9 @@ class myImageFloder(data.Dataset):
 
            dataL = dataL.crop((w-1232, h-368, w, h))
            dataL = np.ascontiguousarray(dataL,dtype=np.float32)/256
+
+           dataR = dataR.crop((w-1232, h-368, w, h))
+           dataR = np.ascontiguousarray(dataR,dtype=np.float32)/256
 
            processed = preprocess.get_transform(augment=False)  
            left_img       = processed(left_img)

@@ -501,8 +501,6 @@ class StereoNet(nn.Module):
         disparity_pyramid = [soft_argmin(disparity_low_l)]
 
         for idx, refiner in enumerate(self.refiners, start=1):
-            # print("idx:", idx)
-            # print("refiner", refiner)
             scale = (2**self.k_refinement_layers) / (2**idx)
             new_h, new_w = int(left.size()[2]//scale), int(left.size()[3]//scale)
             reference_rescaled = F.interpolate(left, [new_h, new_w], mode='bilinear', align_corners=True)

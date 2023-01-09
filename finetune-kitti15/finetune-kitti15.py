@@ -57,16 +57,16 @@ if args.datatype == '2015':
 elif args.datatype == '2012':
     from dataloader import KITTIloader2012 as ls
 
-all_left_img, all_right_img, all_left_disp, test_left_img, test_right_img, test_left_disp = ls.dataloader(args.datapath)
+all_left_img, all_right_img, all_left_disp, all_right_disp, test_left_img, test_right_img, test_left_disp, test_right_disp = ls.dataloader(args.datapath)
 
 
 batchSize = 16
 TrainImgLoader = torch.utils.data.DataLoader(
-    DA.myImageFloder(all_left_img,all_right_img,all_left_disp, True),
+    DA.myImageFloder(all_left_img,all_right_img,all_left_disp,all_right_disp, True),
     batch_size=batchSize, shuffle= True, num_workers= 12, drop_last=True)
 
 TestImgLoader = torch.utils.data.DataLoader(
-    DA.myImageFloder(test_left_img,test_right_img,test_left_disp, False),
+    DA.myImageFloder(test_left_img,test_right_img,test_left_disp,test_right_disp, False),
     batch_size=batchSize, shuffle= False, num_workers= 4, drop_last=False)
 
 cost_volume_method = "subtract"
@@ -93,38 +93,48 @@ if os.path.exists(pretrained_model_path):
 print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in model.parameters()])))
 
 
-def train(imgL,imgR,disp_L):
+def train(imgL,imgR,disp_L,disp_R):
     model.train()
     imgL   = Variable(torch.FloatTensor(imgL))
     imgR   = Variable(torch.FloatTensor(imgR))
     disp_L = Variable(torch.FloatTensor(disp_L))
+    disp_R = Variable(torch.FloatTensor(disp_R))
 
     if args.cuda:
-        imgL, imgR, disp_true = imgL.cuda(), imgR.cuda(), disp_L.cuda()
+        imgL, imgR, disp_left, disp_right = imgL.cuda(), imgR.cuda(), disp_L.cuda(), disp_R.cuda()
 
 
     optimizer.zero_grad()
 
-    output = model(imgL, imgR)
-    for idx, disparity_left in enumerate(output):
-        output[idx] = F.interpolate(disparity_left, [imgL.size()[2], imgL.size()[3]],
+    output_left = model(imgL, imgR)
+    output_right = model(imgR, imgL)
+    for idx, (disparity_left, disparity_right) in enumerate(zip(output_left, output_right)):
+        output_left[idx] = F.interpolate(disparity_left, [imgL.size()[2], imgL.size()[3]],
                                                        mode='bilinear', align_corners=True)
-    disp_pred_left = torch.stack(output, dim=0)
+        output_right[idx] = F.interpolate(disparity_right, [imgL.size()[2], imgL.size()[3]],
+                                                       mode='bilinear', align_corners=True)
+    disp_pred_left = torch.stack(output_left, dim=0)
+    disp_pred_right = torch.stack(output_right, dim=0)
 
     def _tiler(disp_gt_left):
         matching_size = [disp_pred_left.size()[0], 1, 1, 1, 1]
         return disp_gt_left.tile(matching_size)
 
-    disp_true_left = _tiler(disp_true)
+    disp_true_left = _tiler(disp_left)
+    disp_true_right = _tiler(disp_right)
 
     #---------
-    mask = (disp_true_left > 0)
-    mask.detach_()
+    mask_left = (disp_true_left > 0)
+    mask_left.detach_()
+    mask_right = (disp_true_right > 0)
+    mask_right.detach_()
     #----
 
     # output = torch.squeeze(output, 1)
-    loss = F.smooth_l1_loss(disp_pred_left[mask], disp_true_left[mask], size_average=True)
+    loss_left = F.smooth_l1_loss(disp_pred_left[mask_left], disp_true_left[mask_left], size_average=True)
+    loss_right = F.smooth_l1_loss(disp_pred_right[mask_right], disp_true_right[mask_right], size_average=True)
 
+    loss = (loss_left + loss_right) / 2.0
     loss.backward()
     optimizer.step()
 
@@ -202,8 +212,8 @@ def main():
         total_test_three_pixel_error_rate = 0
 
         ## training ##
-        for batch_idx, (imgL_crop, imgR_crop, disp_crop_L) in enumerate(TrainImgLoader):
-            loss = train(imgL_crop,imgR_crop, disp_crop_L)
+        for batch_idx, (imgL_crop, imgR_crop, disp_crop_L, disp_crop_R) in enumerate(TrainImgLoader):
+            loss = train(imgL_crop,imgR_crop, disp_crop_L, disp_crop_R)
             total_train_loss += loss
 
         message = 'epoch %d: ' % epoch

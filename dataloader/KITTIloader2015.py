@@ -29,11 +29,11 @@ def dataloader(filepath):
   left_train  = [os.path.join(left_fold, img) for img in train]
   right_train = [os.path.join(right_fold, img) for img in train]
   disp_train_L = [os.path.join(disp_L, img) for img in train]
-  #disp_train_R = [filepath+disp_R+img for img in train]
+  disp_train_R = [os.path.join(disp_R, img) for img in train]
 
   left_val  = [os.path.join(left_fold, img) for img in val]
   right_val = [os.path.join(right_fold, img) for img in val]
   disp_val_L = [os.path.join(disp_L, img) for img in val]
-  #disp_val_R = [filepath+disp_R+img for img in val]
+  disp_val_R = [os.path.join(disp_R, img) for img in val]
 
-  return left_train, right_train, disp_train_L, left_val, right_val, disp_val_L
+  return left_train, right_train, disp_train_L, disp_train_R, left_val, right_val, disp_val_L, disp_val_R
